@@ -2,31 +2,14 @@ const router = require('express').Router()
 const { query } = require('../db')
 const { requireAuth } = require('../middleware/auth')
 
-// Haversine distance formula in SQL
-const distanceSQL = (lat, lng) => `
-  (6371 * acos(
-    cos(radians(${lat})) * cos(radians(location_lat)) *
-    cos(radians(location_lng) - radians(${lng})) +
-    sin(radians(${lat})) * sin(radians(location_lat))
-  ))
-`
-
-// GET /events - list events with geo sorting and filtering
+// GET /events - list with optional geo filter
 router.get('/', async (req, res) => {
-  const {
-    lat = 0.3476,
-    lng = 32.5825,
-    radius = 100,
-    category,
-    limit = 50,
-    offset = 0,
-  } = req.query
+  const { lat, lng, radius = 100, category, limit = 50, offset = 0 } = req.query
 
   try {
-    const dist = distanceSQL(parseFloat(lat), parseFloat(lng))
-    const params = [parseFloat(lat), parseFloat(lng), parseFloat(radius)]
-    let whereClause = `e.end_time > NOW() AND e.is_active = TRUE AND ${dist} < $3`
-    let paramIndex = 4
+    let whereClause = `e.end_time > NOW() AND e.is_active = TRUE`
+    const params = []
+    let paramIndex = 1
 
     if (category && category !== 'all') {
       whereClause += ` AND e.category = $${paramIndex}`
@@ -40,29 +23,25 @@ router.get('/', async (req, res) => {
     const { rows } = await query(`
       SELECT
         e.*,
-        u.name  AS organizer_name,
-        u.phone AS organizer_phone,
-        u.avatar_url AS organizer_avatar,
-        u.verified   AS organizer_verified,
-        ROUND(${dist}::numeric, 2) AS distance_km
+        u.name        AS organizer_name,
+        u.phone       AS organizer_phone,
+        u.avatar_url  AS organizer_avatar,
+        u.verified    AS organizer_verified
       FROM events e
       JOIN users u ON u.id = e.organizer_id
       WHERE ${whereClause}
-      ORDER BY
-        CASE WHEN e.start_time <= NOW() AND e.end_time >= NOW() THEN 0 ELSE 1 END,
-        ${dist} ASC,
-        e.attendee_count DESC
+      ORDER BY e.start_time ASC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `, params)
 
     res.json({ events: rows.map(formatEvent) })
   } catch (err) {
-    console.error(err)
+    console.error('GET /events error:', err.message)
     res.status(500).json({ message: 'Failed to load events' })
   }
 })
 
-// GET /events/mine - events created by logged-in user
+// GET /events/mine
 router.get('/mine', requireAuth, async (req, res) => {
   try {
     const { rows } = await query(
@@ -73,11 +52,12 @@ router.get('/mine', requireAuth, async (req, res) => {
     )
     res.json({ events: rows.map(formatEvent) })
   } catch (err) {
+    console.error('GET /events/mine error:', err.message)
     res.status(500).json({ message: 'Failed to load your events' })
   }
 })
 
-// GET /events/attending - events user has joined
+// GET /events/attending
 router.get('/attending', requireAuth, async (req, res) => {
   try {
     const { rows } = await query(
@@ -90,6 +70,7 @@ router.get('/attending', requireAuth, async (req, res) => {
     )
     res.json({ events: rows.map(formatEvent) })
   } catch (err) {
+    console.error('GET /events/attending error:', err.message)
     res.status(500).json({ message: 'Failed to load attending events' })
   }
 })
@@ -105,11 +86,12 @@ router.get('/:id', async (req, res) => {
     if (!rows[0]) return res.status(404).json({ message: 'Event not found' })
     res.json({ event: formatEvent(rows[0]) })
   } catch (err) {
+    console.error('GET /events/:id error:', err.message)
     res.status(500).json({ message: 'Failed to load event' })
   }
 })
 
-// POST /events - create event
+// POST /events - create
 router.post('/', requireAuth, async (req, res) => {
   const {
     title, description, category, cover_image,
@@ -135,7 +117,7 @@ router.post('/', requireAuth, async (req, res) => {
       title, description, category,
       cover_image || 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=600',
       start_time, end_time,
-      location_name, location_address,
+      location_name, location_address || location_name,
       location_lat || 0.3136, location_lng || 32.5811,
       req.user.id,
       max_attendees || null,
@@ -144,7 +126,6 @@ router.post('/', requireAuth, async (req, res) => {
       tags || [],
     ])
 
-    // Fetch with organizer info
     const { rows: full } = await query(
       `SELECT e.*, u.name AS organizer_name, u.phone AS organizer_phone, u.avatar_url AS organizer_avatar, u.verified AS organizer_verified
        FROM events e JOIN users u ON u.id = e.organizer_id WHERE e.id = $1`,
@@ -153,40 +134,38 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.status(201).json({ event: formatEvent(full[0]) })
   } catch (err) {
-    console.error(err)
+    console.error('POST /events error:', err.message)
     res.status(500).json({ message: 'Failed to create event' })
   }
 })
 
-// PUT /events/:id - update event
-router.put('/:id', requireAuth, async (req, res) => {
+// POST /events/:id/join
+router.post('/:id/join', requireAuth, async (req, res) => {
   try {
-    const { rows: existing } = await query('SELECT * FROM events WHERE id = $1', [req.params.id])
-    if (!existing[0]) return res.status(404).json({ message: 'Event not found' })
-    if (existing[0].organizer_id !== req.user.id) return res.status(403).json({ message: 'Not your event' })
-
-    const { title, description, category, cover_image, start_time, end_time, location_name, location_address, max_attendees, entry_fee, original_fee, tags } = req.body
-
-    const { rows } = await query(`
-      UPDATE events SET
-        title = COALESCE($1, title),
-        description = COALESCE($2, description),
-        category = COALESCE($3, category),
-        cover_image = COALESCE($4, cover_image),
-        start_time = COALESCE($5, start_time),
-        end_time = COALESCE($6, end_time),
-        location_name = COALESCE($7, location_name),
-        location_address = COALESCE($8, location_address),
-        max_attendees = COALESCE($9, max_attendees),
-        entry_fee = COALESCE($10, entry_fee),
-        original_fee = COALESCE($11, original_fee),
-        tags = COALESCE($12, tags)
-      WHERE id = $13 RETURNING *
-    `, [title, description, category, cover_image, start_time, end_time, location_name, location_address, max_attendees, entry_fee, original_fee, tags, req.params.id])
-
-    res.json({ event: formatEvent(rows[0]) })
+    const { rows } = await query('SELECT * FROM events WHERE id = $1', [req.params.id])
+    if (!rows[0]) return res.status(404).json({ message: 'Event not found' })
+    if (rows[0].max_attendees && rows[0].attendee_count >= rows[0].max_attendees) {
+      return res.status(400).json({ message: 'Event is full' })
+    }
+    await query('INSERT INTO attendees (event_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.params.id, req.user.id])
+    await query('UPDATE events SET attendee_count = attendee_count + 1 WHERE id = $1', [req.params.id])
+    res.json({ message: 'Joined' })
   } catch (err) {
-    res.status(500).json({ message: 'Failed to update event' })
+    console.error('POST /events/:id/join error:', err.message)
+    res.status(500).json({ message: 'Failed to join' })
+  }
+})
+
+// POST /events/:id/leave
+router.post('/:id/leave', requireAuth, async (req, res) => {
+  try {
+    const { rowCount } = await query('DELETE FROM attendees WHERE event_id = $1 AND user_id = $2', [req.params.id, req.user.id])
+    if (rowCount > 0) {
+      await query('UPDATE events SET attendee_count = GREATEST(0, attendee_count - 1) WHERE id = $1', [req.params.id])
+    }
+    res.json({ message: 'Left' })
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to leave' })
   }
 })
 
@@ -194,88 +173,43 @@ router.put('/:id', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const { rows } = await query('SELECT * FROM events WHERE id = $1', [req.params.id])
-    if (!rows[0]) return res.status(404).json({ message: 'Event not found' })
+    if (!rows[0]) return res.status(404).json({ message: 'Not found' })
     if (rows[0].organizer_id !== req.user.id) return res.status(403).json({ message: 'Not your event' })
     await query('DELETE FROM events WHERE id = $1', [req.params.id])
-    res.json({ message: 'Event deleted' })
+    res.json({ message: 'Deleted' })
   } catch (err) {
-    res.status(500).json({ message: 'Failed to delete event' })
-  }
-})
-
-// POST /events/:id/join
-router.post('/:id/join', requireAuth, async (req, res) => {
-  try {
-    const { rows: eventRows } = await query('SELECT * FROM events WHERE id = $1', [req.params.id])
-    if (!eventRows[0]) return res.status(404).json({ message: 'Event not found' })
-
-    const event = eventRows[0]
-    if (event.max_attendees && event.attendee_count >= event.max_attendees) {
-      return res.status(400).json({ message: 'Event is full' })
-    }
-
-    await query(
-      'INSERT INTO attendees (event_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [req.params.id, req.user.id]
-    )
-    await query(
-      'UPDATE events SET attendee_count = attendee_count + 1 WHERE id = $1',
-      [req.params.id]
-    )
-    res.json({ message: 'Joined successfully' })
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to join event' })
-  }
-})
-
-// POST /events/:id/leave
-router.post('/:id/leave', requireAuth, async (req, res) => {
-  try {
-    const { rowCount } = await query(
-      'DELETE FROM attendees WHERE event_id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    )
-    if (rowCount > 0) {
-      await query(
-        'UPDATE events SET attendee_count = GREATEST(0, attendee_count - 1) WHERE id = $1',
-        [req.params.id]
-      )
-    }
-    res.json({ message: 'Left event' })
-  } catch (err) {
-    res.status(500).json({ message: 'Failed to leave event' })
+    res.status(500).json({ message: 'Failed to delete' })
   }
 })
 
 function formatEvent(row) {
   return {
-    id: row.id,
-    title: row.title,
-    description: row.description,
-    category: row.category,
-    coverImage: row.cover_image,
-    startTime: row.start_time,
-    endTime: row.end_time,
+    id:            row.id,
+    title:         row.title,
+    description:   row.description,
+    category:      row.category,
+    coverImage:    row.cover_image,
+    startTime:     row.start_time,
+    endTime:       row.end_time,
     location: {
-      name: row.location_name,
+      name:    row.location_name,
       address: row.location_address,
-      lat: parseFloat(row.location_lat),
-      lng: parseFloat(row.location_lng),
+      lat:     parseFloat(row.location_lat) || 0.3136,
+      lng:     parseFloat(row.location_lng) || 32.5811,
     },
     organizer: {
-      id: row.organizer_id,
-      name: row.organizer_name,
-      phone: row.organizer_phone,
-      avatar: row.organizer_avatar,
+      id:       row.organizer_id,
+      name:     row.organizer_name,
+      phone:    row.organizer_phone,
+      avatar:   row.organizer_avatar,
       verified: row.organizer_verified,
     },
-    attendeeCount: parseInt(row.attendee_count),
-    maxAttendees: row.max_attendees ? parseInt(row.max_attendees) : null,
-    entryFee: parseInt(row.entry_fee),
-    originalFee: row.original_fee ? parseInt(row.original_fee) : null,
-    tags: row.tags || [],
-    distance: row.distance_km ? parseFloat(row.distance_km) : null,
-    createdAt: row.created_at,
+    attendeeCount: parseInt(row.attendee_count) || 0,
+    maxAttendees:  row.max_attendees ? parseInt(row.max_attendees) : null,
+    entryFee:      parseInt(row.entry_fee) || 0,
+    originalFee:   row.original_fee ? parseInt(row.original_fee) : null,
+    tags:          row.tags || [],
+    createdAt:     row.created_at,
   }
 }
 
