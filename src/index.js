@@ -1,6 +1,6 @@
 require('dotenv').config()
 const express = require('express')
-const cors = require('cors')
+const cors    = require('cors')
 
 const authRoutes   = require('./routes/auth')
 const eventsRoutes = require('./routes/events')
@@ -12,12 +12,15 @@ app.use(cors({
     const allowed = [
       'https://rede-app.netlify.app',
       'http://localhost:8081',
+      'http://localhost:8082',
       'http://localhost:3000',
       'http://localhost:19006',
     ]
     if (!origin) return callback(null, true)
     if (allowed.includes(origin)) return callback(null, true)
-    console.warn('Blocked by CORS:', origin)
+    // Allow any localhost port for local dev
+    if (origin.startsWith('http://localhost:')) return callback(null, true)
+    console.warn('CORS blocked:', origin)
     callback(new Error('Not allowed by CORS'))
   },
   credentials: true,
@@ -36,17 +39,17 @@ app.use('/api/v1/auth',   authRoutes)
 app.use('/api/v1/events', eventsRoutes)
 
 app.use((req, res) => {
-  res.status(404).json({ message: `Route ${req.method} ${req.path} not found` })
+  res.status(404).json({ message: `${req.method} ${req.path} not found` })
 })
 
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message)
+  console.error('Server error:', err.message)
   res.status(500).json({ message: 'Internal server error' })
 })
 
 const PORT = process.env.PORT || 4000
 app.listen(PORT, () => {
-  console.log(`\n🚀 REDE API running on port ${PORT}`)
-  console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`)
-  console.log(`🔗 Health: http://localhost:${PORT}/health\n`)
+  console.log(`\n🚀 REDE API on port ${PORT}`)
+  console.log(`📦 Env: ${process.env.NODE_ENV}`)
+  console.log(`🔗 http://localhost:${PORT}/health\n`)
 })
