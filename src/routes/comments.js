@@ -45,6 +45,15 @@ router.post('/', requireAuth, async (req, res) => {
     )
     if (!evtRows[0]) return res.status(404).json({ message: 'Event not found' })
 
+    // Only attendees can comment
+    const { rows: attRows } = await query(
+      'SELECT id FROM attendees WHERE event_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    )
+    if (!attRows[0]) {
+      return res.status(403).json({ message: 'You need to join this event to comment' })
+    }
+
     const { rows } = await query(`
       INSERT INTO comments (event_id, user_id, text)
       VALUES ($1, $2, $3) RETURNING *
@@ -94,3 +103,6 @@ function fmt(r) {
 }
 
 module.exports = router
+
+// The attendee check is also enforced in the frontend (CommentSection.js)
+// For extra security it's also checked here server-side
