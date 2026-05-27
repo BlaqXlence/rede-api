@@ -1,9 +1,9 @@
 /**
  * comments.js
- * Event comment threads — simple, flat, real-time via polling
- * GET  /events/:id/comments — list comments
- * POST /events/:id/comments — post a comment (auth required)
- * DELETE /events/:id/comments/:commentId — delete own comment
+ * - Organizer can always comment on their own event
+ * - Attendees can comment
+ * - Everyone can read
+ * - Author can delete their own comment
  */
 const router = require('express').Router({ mergeParams: true })
 const { query } = require('../db')
@@ -18,12 +18,10 @@ router.get('/', async (req, res) => {
       JOIN users u ON u.id = c.user_id
       WHERE c.event_id = $1
       ORDER BY c.created_at ASC
-      LIMIT 100
     `, [req.params.id])
-
     res.json({ comments: rows.map(fmt) })
   } catch (err) {
-    console.error('GET comments error:', err.message)
+    console.error('GET comments:', err.message)
     res.status(500).json({ message: err.message })
   }
 })
@@ -31,35 +29,39 @@ router.get('/', async (req, res) => {
 // POST /events/:id/comments
 router.post('/', requireAuth, async (req, res) => {
   const { text } = req.body
-  if (!text || text.trim().length < 1) {
-    return res.status(400).json({ message: 'Comment cannot be empty' })
-  }
-  if (text.trim().length > 500) {
-    return res.status(400).json({ message: 'Comment too long (max 500 characters)' })
-  }
+  if (!text || !text.trim()) return res.status(400).json({ message: 'Comment cannot be empty' })
+  if (text.trim().length > 500) return res.status(400).json({ message: 'Max 500 characters' })
 
   try {
-    // Check event exists
-    const { rows: evtRows } = await query(
-      'SELECT id FROM events WHERE id = $1', [req.params.id]
-    )
+    const { rows: evtRows } = await query('SELECT * FROM events WHERE id = $1', [req.params.id])
     if (!evtRows[0]) return res.status(404).json({ message: 'Event not found' })
 
-    const { rows } = await query(`
-      INSERT INTO comments (event_id, user_id, text)
-      VALUES ($1, $2, $3) RETURNING *
-    `, [req.params.id, req.user.id, text.trim()])
+    const isOrganizer = evtRows[0].organizer_id === req.user.id
 
-    // Fetch with author info
+    // Allow organizer OR attendee to comment
+    if (!isOrganizer) {
+      const { rows: attRows } = await query(
+        'SELECT id FROM attendees WHERE event_id = $1 AND user_id = $2',
+        [req.params.id, req.user.id]
+      )
+      if (!attRows[0]) {
+        return res.status(403).json({ message: 'Join this event to comment' })
+      }
+    }
+
+    const { rows } = await query(
+      'INSERT INTO comments (event_id, user_id, text) VALUES ($1, $2, $3) RETURNING *',
+      [req.params.id, req.user.id, text.trim()]
+    )
+
     const { rows: full } = await query(`
       SELECT c.*, u.name AS author_name, u.avatar_url AS author_avatar
-      FROM comments c JOIN users u ON u.id = c.user_id
-      WHERE c.id = $1
+      FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = $1
     `, [rows[0].id])
 
     res.status(201).json({ comment: fmt(full[0]) })
   } catch (err) {
-    console.error('POST comment error:', err.message)
+    console.error('POST comment:', err.message)
     res.status(500).json({ message: err.message })
   }
 })
@@ -67,13 +69,9 @@ router.post('/', requireAuth, async (req, res) => {
 // DELETE /events/:id/comments/:commentId
 router.delete('/:commentId', requireAuth, async (req, res) => {
   try {
-    const { rows } = await query(
-      'SELECT * FROM comments WHERE id = $1', [req.params.commentId]
-    )
+    const { rows } = await query('SELECT * FROM comments WHERE id = $1', [req.params.commentId])
     if (!rows[0]) return res.status(404).json({ message: 'Comment not found' })
-    if (rows[0].user_id !== req.user.id) {
-      return res.status(403).json({ message: 'Not your comment' })
-    }
+    if (rows[0].user_id !== req.user.id) return res.status(403).json({ message: 'Not your comment' })
     await query('DELETE FROM comments WHERE id = $1', [req.params.commentId])
     res.json({ message: 'Deleted' })
   } catch (err) {
