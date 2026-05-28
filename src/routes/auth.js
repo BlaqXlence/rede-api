@@ -196,4 +196,63 @@ function fmtEvent(row) {
   }
 }
 
+
+// GET /auth/search-organisers?q=name
+router.get('/search-organisers', async (req, res) => {
+  const q = (req.query.q || '').trim()
+  if (!q || q.length < 2) return res.json({ organisers: [] })
+  try {
+    const { rows } = await query(`
+      SELECT u.id, u.name, u.avatar_url AS avatar, u.verified,
+             COUNT(DISTINCT e.id) AS event_count,
+             ROUND(AVG(r.rating), 1) AS avg_rating
+      FROM users u
+      LEFT JOIN events e ON e.organizer_id = u.id AND e.is_active = TRUE
+      LEFT JOIN reviews r ON r.event_id = e.id
+      WHERE u.name ILIKE $1
+      GROUP BY u.id
+      ORDER BY event_count DESC, u.verified DESC
+      LIMIT 20
+    `, [`%${q}%`])
+
+    res.json({
+      organisers: rows.map(o => ({
+        id: o.id, name: o.name, avatar: o.avatar_url || o.avatar,
+        verified: o.verified,
+        eventCount: parseInt(o.event_count) || 0,
+        avgRating: o.avg_rating ? parseFloat(o.avg_rating) : null,
+      }))
+    })
+  } catch (err) { res.status(500).json({ message: err.message }) }
+})
+
 module.exports = router
+
+// DELETE /auth/account — remove user and all their data
+router.delete('/account', requireAuth, async (req, res) => {
+  try {
+    // Delete in order to respect foreign keys:
+    // comments -> reviews -> attendees -> events -> user
+    await query('DELETE FROM comments  WHERE user_id = $1', [req.user.id])
+    await query('DELETE FROM reviews   WHERE user_id = $1', [req.user.id])
+    await query('DELETE FROM attendees WHERE user_id = $1', [req.user.id])
+
+    // Update attendee counts for events they left
+    await query(`
+      UPDATE events SET attendee_count = (
+        SELECT COUNT(*) FROM attendees WHERE event_id = events.id
+      ) WHERE is_active = TRUE
+    `)
+
+    // Their events — soft delete (keep for history)
+    await query('UPDATE events SET is_active = FALSE WHERE organizer_id = $1', [req.user.id])
+
+    // Delete user
+    await query('DELETE FROM users WHERE id = $1', [req.user.id])
+
+    res.json({ message: 'Account deleted' })
+  } catch (err) {
+    console.error('Delete account:', err.message)
+    res.status(500).json({ message: err.message })
+  }
+})
