@@ -197,3 +197,32 @@ function fmtEvent(row) {
 }
 
 module.exports = router
+
+// DELETE /auth/account — remove user and all their data
+router.delete('/account', requireAuth, async (req, res) => {
+  try {
+    // Delete in order to respect foreign keys:
+    // comments -> reviews -> attendees -> events -> user
+    await query('DELETE FROM comments  WHERE user_id = $1', [req.user.id])
+    await query('DELETE FROM reviews   WHERE user_id = $1', [req.user.id])
+    await query('DELETE FROM attendees WHERE user_id = $1', [req.user.id])
+
+    // Update attendee counts for events they left
+    await query(`
+      UPDATE events SET attendee_count = (
+        SELECT COUNT(*) FROM attendees WHERE event_id = events.id
+      ) WHERE is_active = TRUE
+    `)
+
+    // Their events — soft delete (keep for history)
+    await query('UPDATE events SET is_active = FALSE WHERE organizer_id = $1', [req.user.id])
+
+    // Delete user
+    await query('DELETE FROM users WHERE id = $1', [req.user.id])
+
+    res.json({ message: 'Account deleted' })
+  } catch (err) {
+    console.error('Delete account:', err.message)
+    res.status(500).json({ message: err.message })
+  }
+})

@@ -20,7 +20,7 @@ async function requireAuth(req, res, next) {
 }
 
 function signToken(userId) {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '90d' })
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '365d' })
 }
 
 module.exports = { requireAuth, signToken }

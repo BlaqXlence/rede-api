@@ -66,6 +66,23 @@ router.post('/', requireAuth, async (req, res) => {
   }
 })
 
+
+// GET /events/:id/can-comment — can current user post?
+router.get('/can-comment', requireAuth, async (req, res) => {
+  try {
+    const { rows: evtRows } = await query('SELECT organizer_id FROM events WHERE id=$1', [req.params.id])
+    if (!evtRows[0]) return res.json({ canComment: false })
+    if (evtRows[0].organizer_id === req.user.id) return res.json({ canComment: true, reason: 'organizer' })
+    const { rows: attRows } = await query(
+      'SELECT id FROM attendees WHERE event_id=$1 AND user_id=$2',
+      [req.params.id, req.user.id]
+    )
+    res.json({ canComment: attRows.length > 0, reason: attRows.length > 0 ? 'attendee' : 'not_member' })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
 // DELETE /events/:id/comments/:commentId
 router.delete('/:commentId', requireAuth, async (req, res) => {
   try {
