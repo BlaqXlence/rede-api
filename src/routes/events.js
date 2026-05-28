@@ -138,8 +138,8 @@ router.post('/', requireAuth, async (req, res) => {
   if (!title || !description || !category || !start_time || !end_time || !location_name)
     return res.status(400).json({ message: 'Missing required fields' })
 
-  if (new Date(start_time) > new Date(Date.now() + 7 * 86400000))
-    return res.status(400).json({ message: 'Events can only be planned up to 7 days ahead' })
+  if (new Date(start_time) > new Date(Date.now() + 30 * 86400000))
+    return res.status(400).json({ message: 'Events can only be planned up to 30 days ahead' })
 
   try {
     const { rows } = await query(`
