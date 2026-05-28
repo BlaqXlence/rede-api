@@ -1,3 +1,8 @@
+// UUID validation helper - prevents crash on local-only event IDs
+function isValidUUID(str) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
+
 /**
  * comments.js
  * - Organizer can always comment on their own event
@@ -11,6 +16,7 @@ const { requireAuth } = require('../middleware/auth')
 
 // GET /events/:id/comments
 router.get('/', async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.json({ comments: [] })
   try {
     const { rows } = await query(`
       SELECT c.*, u.name AS author_name, u.avatar_url AS author_avatar
@@ -28,6 +34,7 @@ router.get('/', async (req, res) => {
 
 // POST /events/:id/comments
 router.post('/', requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ message: 'Invalid event' })
   const { text } = req.body
   if (!text || !text.trim()) return res.status(400).json({ message: 'Comment cannot be empty' })
   if (text.trim().length > 500) return res.status(400).json({ message: 'Max 500 characters' })
@@ -62,6 +69,24 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(201).json({ comment: fmt(full[0]) })
   } catch (err) {
     console.error('POST comment:', err.message)
+    res.status(500).json({ message: err.message })
+  }
+})
+
+
+// GET /events/:id/can-comment — can current user post?
+router.get('/can-comment', requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.json({ canComment: false })
+  try {
+    const { rows: evtRows } = await query('SELECT organizer_id FROM events WHERE id=$1', [req.params.id])
+    if (!evtRows[0]) return res.json({ canComment: false })
+    if (evtRows[0].organizer_id === req.user.id) return res.json({ canComment: true, reason: 'organizer' })
+    const { rows: attRows } = await query(
+      'SELECT id FROM attendees WHERE event_id=$1 AND user_id=$2',
+      [req.params.id, req.user.id]
+    )
+    res.json({ canComment: attRows.length > 0, reason: attRows.length > 0 ? 'attendee' : 'not_member' })
+  } catch (err) {
     res.status(500).json({ message: err.message })
   }
 })

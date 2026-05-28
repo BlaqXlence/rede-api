@@ -1,3 +1,7 @@
+function isValidUUID(str) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
+
 /**
  * reviews.js — Event review routes
  * POST /events/:id/reviews  — leave a review (must have attended)
@@ -10,6 +14,7 @@ const { requireAuth } = require('../middleware/auth')
 
 // GET /events/:id/reviews
 router.get('/', async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.json({ reviews: [], average: null, count: 0 })
   try {
     const { rows } = await query(`
       SELECT r.*, u.name AS reviewer_name, u.avatar_url AS reviewer_avatar
