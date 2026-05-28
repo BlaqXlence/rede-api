@@ -191,7 +191,6 @@ function formatUser(u) {
     createdAt:       u.created_at,
   }
 }
-}
 
 // Convert snake_case DB row to camelCase for frontend
 function fmtEvent(row) {
