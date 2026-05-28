@@ -91,12 +91,11 @@ router.get('/:id/attendees', async (req, res) => {
   if (!isValidUUID(req.params.id)) return res.json({ attendees: [] })
   try {
     const { rows } = await query(`
-      SELECT u.id, u.name, u.avatar_url AS avatar, u.verified,
-             a.created_at AS joined_at
+      SELECT u.id, u.name, u.avatar_url AS avatar, u.verified
       FROM attendees a
       JOIN users u ON u.id = a.user_id
       WHERE a.event_id = $1
-      ORDER BY a.created_at ASC
+      ORDER BY u.name ASC
     `, [req.params.id])
     res.json({ attendees: rows })
   } catch (err) { res.status(500).json({ message: err.message }) }
