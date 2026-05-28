@@ -90,8 +90,26 @@ router.put('/profile', requireAuth, async (req, res) => {
       await query('INSERT INTO name_change_log (user_id, changed_at) VALUES ($1, NOW()) ON CONFLICT (user_id) DO UPDATE SET changed_at=NOW()', [req.user.id])
     }
     const { rows } = await query(
-      'UPDATE users SET name=COALESCE($1,name), email=COALESCE($2,email), avatar_url=COALESCE($3,avatar_url), push_token=COALESCE($4,push_token) WHERE id=$5 RETURNING *',
-      [name?.trim()||null, email?.trim()||null, avatar_url||null, push_token||null, req.user.id]
+      `UPDATE users SET
+        name       = COALESCE($1, name),
+        email      = COALESCE($2, email),
+        avatar_url = COALESCE($3, avatar_url),
+        push_token = COALESCE($4, push_token),
+        first_name = COALESCE($6, first_name),
+        last_name  = COALESCE($7, last_name),
+        nickname   = COALESCE($8, nickname),
+        age        = COALESCE($9, age),
+        interests  = COALESCE($10, interests),
+        profile_complete = CASE WHEN $6 IS NOT NULL AND $8 IS NOT NULL THEN TRUE ELSE profile_complete END
+       WHERE id = $5 RETURNING *`,
+      [
+        name?.trim()||null, email?.trim()||null, avatar_url||null, push_token||null,
+        req.user.id,
+        first_name?.trim()||null, last_name?.trim()||null,
+        nickname?.trim()||null,
+        age ? parseInt(age) : null,
+        interests?.length > 0 ? interests : null,
+      ]
     )
     res.json({ user: formatUser(rows[0]) })
   } catch (err) {
@@ -157,10 +175,22 @@ router.get('/organizer/:id', async (req, res) => {
 
 function formatUser(u) {
   return {
-    id: u.id, phone: u.phone, name: u.name,
-    email: u.email, avatar: u.avatar_url,
-    verified: u.verified, pushToken: u.push_token, createdAt: u.created_at,
+    id:              u.id,
+    phone:           u.phone,
+    name:            u.nickname || u.name,
+    nickname:        u.nickname || u.name,
+    firstName:       u.first_name  || null,
+    lastName:        u.last_name   || null,
+    email:           u.email       || null,
+    avatar:          u.avatar_url  || null,
+    verified:        u.verified    || false,
+    age:             u.age         || null,
+    interests:       u.interests   || [],
+    profileComplete: u.profile_complete || false,
+    pushToken:       u.push_token  || null,
+    createdAt:       u.created_at,
   }
+}
 }
 
 // Convert snake_case DB row to camelCase for frontend
