@@ -48,7 +48,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Allow organizer OR attendee to comment
     if (!isOrganizer) {
       const { rows: attRows } = await query(
-        'SELECT id FROM attendees WHERE event_id = $1 AND user_id = $2',
+        'SELECT 1 FROM attendees WHERE event_id = $1 AND user_id = $2',
         [req.params.id, req.user.id]
       )
       if (!attRows[0]) {
@@ -82,7 +82,7 @@ router.get('/can-comment', requireAuth, async (req, res) => {
     if (!evtRows[0]) return res.json({ canComment: false })
     if (evtRows[0].organizer_id === req.user.id) return res.json({ canComment: true, reason: 'organizer' })
     const { rows: attRows } = await query(
-      'SELECT id FROM attendees WHERE event_id=$1 AND user_id=$2',
+      'SELECT 1 FROM attendees WHERE event_id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     )
     res.json({ canComment: attRows.length > 0, reason: attRows.length > 0 ? 'attendee' : 'not_member' })

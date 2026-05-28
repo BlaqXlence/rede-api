@@ -107,7 +107,7 @@ router.get('/:id/attending-check', requireAuth, async (req, res) => {
   if (!isValidUUID(req.params.id)) return res.json({ attending: false })
   try {
     const { rows } = await query(
-      'SELECT id FROM attendees WHERE event_id = $1 AND user_id = $2',
+      'SELECT 1 FROM attendees WHERE event_id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     )
     res.json({ attending: rows.length > 0 })
@@ -121,7 +121,7 @@ router.get('/:id/can-comment', requireAuth, async (req, res) => {
     if (!evtRows[0]) return res.json({ canComment: false })
     if (evtRows[0].organizer_id === req.user.id) return res.json({ canComment: true, reason: 'organizer' })
     const { rows: attRows } = await query(
-      'SELECT id FROM attendees WHERE event_id=$1 AND user_id=$2',
+      'SELECT 1 FROM attendees WHERE event_id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     )
     res.json({ canComment: attRows.length > 0, reason: attRows.length > 0 ? 'attendee' : 'not_member' })
