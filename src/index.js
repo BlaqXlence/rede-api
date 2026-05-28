@@ -8,6 +8,7 @@ const reviewsRoutes  = require('./routes/reviews')
 const commentsRoutes = require('./routes/comments')
 const searchRoutes   = require('./routes/search')
 const uploadRoutes   = require('./routes/upload')
+const adminRoutes    = require('./routes/admin')
 
 const app = express()
 
@@ -38,6 +39,7 @@ app.use('/api/v1/events/:id/reviews',    reviewsRoutes)
 app.use('/api/v1/events/:id/comments',   commentsRoutes)
 app.use('/api/v1/search',                searchRoutes)
 app.use('/api/v1/upload',                uploadRoutes)
+app.use('/api/v1/admin',                 adminRoutes)
 
 app.use((req, res) => {
   res.status(404).json({ message: `${req.method} ${req.path} not found` })
