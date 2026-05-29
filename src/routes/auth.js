@@ -19,7 +19,19 @@ async function sendSMS(phone, message) {
   try {
     const AT = require('africastalking')
     const at = AT({ username, apiKey })
-    await at.SMS.send({ to: [phone], message, from: senderId })
+    
+    // Normalise phone — AT Uganda needs +256XXXXXXXXX format
+    const normalised = phone.startsWith('+') ? phone : `+${phone}`
+    
+    // Build send options — only add from/senderId if explicitly set
+    const sendOptions = { to: [normalised], message }
+    if (senderId && senderId !== 'AFRICASTALKING' && senderId !== 'sandbox') {
+      sendOptions.from = senderId
+    }
+    
+    console.log(`📤 Sending SMS to ${normalised} via AT (user: ${username})`)
+    const result = await at.SMS.send(sendOptions)
+    console.log('AT result:', JSON.stringify(result))
     return { success: true }
   } catch (err) {
     console.error('SMS error:', err.message)
