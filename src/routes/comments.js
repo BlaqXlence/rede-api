@@ -19,11 +19,13 @@ router.get('/', async (req, res) => {
   if (!isValidUUID(req.params.id)) return res.json({ comments: [] })
   try {
     const { rows } = await query(`
-      SELECT c.*, u.name AS author_name, u.avatar_url AS author_avatar
+      SELECT c.id, c.text, c.user_id, c.event_id, c.created_at,
+             u.name AS author_name, u.nickname AS author_nickname, u.avatar_url AS author_avatar
       FROM comments c
       JOIN users u ON u.id = c.user_id
       WHERE c.event_id = $1
       ORDER BY c.created_at ASC
+      LIMIT 100
     `, [req.params.id])
     res.json({ comments: rows.map(fmt) })
   } catch (err) {
