@@ -193,8 +193,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const { rows } = await query('SELECT * FROM events WHERE id=$1', [req.params.id])
     if (!rows[0]) return res.status(404).json({ message: 'Not found' })
     if (rows[0].organizer_id !== req.user.id) return res.status(403).json({ message: 'Not your event' })
-    if (rows[0].attendee_count > 0) return res.status(400).json({ message: 'Cannot delete — people have joined' })
-    await query('DELETE FROM events WHERE id=$1', [req.params.id])
+    // Delete attendees and comments first, then the event
+    await query('DELETE FROM attendees WHERE event_id=$1', [req.params.id])
+    await query('DELETE FROM comments  WHERE event_id=$1', [req.params.id])
+    await query('DELETE FROM reviews   WHERE event_id=$1', [req.params.id])
+    await query('DELETE FROM events    WHERE id=$1', [req.params.id])
     res.json({ message: 'Deleted' })
   } catch (err) { res.status(500).json({ message: err.message }) }
 })
