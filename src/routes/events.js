@@ -188,6 +188,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
 // DELETE /events/:id
 router.delete('/:id', requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ message: 'Invalid event ID' })
   try {
     const { rows } = await query('SELECT * FROM events WHERE id=$1', [req.params.id])
     if (!rows[0]) return res.status(404).json({ message: 'Not found' })
@@ -200,6 +201,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 // POST /events/:id/join
 router.post('/:id/join', requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ message: 'Invalid event' })
   try {
     const { rows: evtRows } = await query('SELECT * FROM events WHERE id=$1', [req.params.id])
     if (!evtRows[0]) return res.status(404).json({ message: 'Not found' })
@@ -223,13 +225,29 @@ router.post('/:id/join', requireAuth, async (req, res) => {
 
 // POST /events/:id/leave
 router.post('/:id/leave', requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ message: 'Invalid event' })
   try {
+    const { rows: evtRows } = await query('SELECT * FROM events WHERE id=$1', [req.params.id])
+    if (!evtRows[0]) return res.status(404).json({ message: 'Event not found' })
+
+    const event      = evtRows[0]
+    const isPaid     = parseInt(event.entry_fee) > 0
+    const hoursLeft  = (new Date(event.start_time) - Date.now()) / 3_600_000
+
+    // Paid events: can only leave 3+ hours before start
+    if (isPaid && hoursLeft < 3 && hoursLeft > 0) {
+      return res.status(400).json({
+        message: `Paid events can only be left 3+ hours before start. ${Math.ceil(hoursLeft * 60)} minutes remaining.`
+      })
+    }
+
     const { rowCount } = await query(
       'DELETE FROM attendees WHERE event_id=$1 AND user_id=$2',
       [req.params.id, req.user.id]
     )
     if (rowCount > 0)
       await query('UPDATE events SET attendee_count = GREATEST(0, attendee_count - 1) WHERE id=$1', [req.params.id])
+
     const { rows: updated } = await query('SELECT attendee_count FROM events WHERE id=$1', [req.params.id])
     res.json({ message: 'Left', attendeeCount: parseInt(updated[0].attendee_count) })
   } catch (err) { res.status(500).json({ message: err.message }) }

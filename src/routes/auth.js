@@ -41,6 +41,15 @@ async function sendSMS(phone, message) {
 }
 
 function formatUser(u) {
+  // Calculate age from birthday
+  let age = u.age || null
+  if (u.birthday) {
+    const bd   = new Date(u.birthday)
+    const today = new Date()
+    age = today.getFullYear() - bd.getFullYear()
+    const m = today.getMonth() - bd.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--
+  }
   return {
     id:              u.id,
     phone:           u.phone,
@@ -51,7 +60,8 @@ function formatUser(u) {
     email:           u.email        || null,
     avatar:          u.avatar_url   || null,
     verified:        u.verified     || false,
-    age:             u.age          || null,
+    age,
+    birthday:        u.birthday     || null,
     interests:       u.interests    || [],
     profileComplete: u.profile_complete || false,
     pushToken:       u.push_token   || null,
@@ -150,7 +160,7 @@ router.get('/profile', requireAuth, async (req, res) => {
 router.put('/profile', requireAuth, async (req, res) => {
   const {
     name, email, avatar_url, push_token,
-    first_name, last_name, nickname, age, interests,
+    first_name, last_name, nickname, age, interests, birthday,
   } = req.body
   try {
     // 7-day cooldown on nickname change
@@ -171,6 +181,17 @@ router.put('/profile', requireAuth, async (req, res) => {
       )
     }
 
+    // Check nickname uniqueness before updating
+    if (nickname?.trim()) {
+      const { rows: existing } = await query(
+        'SELECT id FROM users WHERE LOWER(nickname) = LOWER($1) AND id != $2',
+        [nickname.trim(), req.user.id]
+      )
+      if (existing.length > 0) {
+        return res.status(400).json({ message: 'That nickname is already taken. Try another.' })
+      }
+    }
+
     const { rows } = await query(
       `UPDATE users SET
         name         = COALESCE($1,  name),
@@ -181,20 +202,25 @@ router.put('/profile', requireAuth, async (req, res) => {
         last_name    = COALESCE($7,  last_name),
         nickname     = COALESCE($8,  nickname),
         age          = COALESCE($9,  age),
+        birthday     = COALESCE($11, birthday),
         interests    = COALESCE($10, interests),
-        profile_complete = CASE WHEN $6 IS NOT NULL AND $8 IS NOT NULL THEN TRUE ELSE profile_complete END
+        profile_complete = CASE 
+          WHEN $6 IS NOT NULL AND $7 IS NOT NULL AND $8 IS NOT NULL THEN TRUE 
+          ELSE profile_complete 
+        END
        WHERE id=$5 RETURNING *`,
       [
-        name?.trim()     || null,
-        email?.trim()    || null,
-        avatar_url       || null,
-        push_token       || null,
+        name?.trim()       || null,
+        email?.trim()      || null,
+        avatar_url         || null,
+        push_token         || null,
         req.user.id,
         first_name?.trim() || null,
         last_name?.trim()  || null,
         nickname?.trim()   || null,
         age ? parseInt(age) : null,
         interests?.length > 0 ? interests : null,
+        birthday           || null,
       ]
     )
     res.json({ user: formatUser(rows[0]) })
