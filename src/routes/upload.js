@@ -1,7 +1,3 @@
-/**
- * upload.js - handles both base64 and multipart/form-data
- * POST /upload
- */
 const router  = require('express').Router()
 const { requireAuth } = require('../middleware/auth')
 const multer  = require('multer')
@@ -12,13 +8,23 @@ async function uploadToCloudinary(data) {
   const apiKey    = process.env.CLOUDINARY_API_KEY
   const apiSecret = process.env.CLOUDINARY_API_SECRET
 
-  if (!cloudName || !apiKey || !apiSecret) return null
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.log('Cloudinary not configured - missing env vars')
+    return null
+  }
 
-  const cloudinary = require('cloudinary').v2
+  let cloudinary
+  try {
+    cloudinary = require('cloudinary').v2
+  } catch {
+    console.error('cloudinary package not installed - run: npm install cloudinary')
+    return null
+  }
+
   cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret })
 
   const result = await cloudinary.uploader.upload(data, {
-    folder: 'rede/events',
+    folder: 'rede',
     transformation: [
       { width: 1200, height: 800, crop: 'limit' },
       { quality: 'auto', fetch_format: 'auto' },
@@ -27,34 +33,39 @@ async function uploadToCloudinary(data) {
   return result.secure_url
 }
 
-// Multipart upload (native mobile)
 router.post('/', requireAuth, upload.single('file'), async (req, res) => {
   try {
-    // Multipart file upload
+    let dataToUpload = null
+
     if (req.file) {
-      const b64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
-      const url = await uploadToCloudinary(b64)
-      if (url) return res.json({ url, cloudinary: true })
-      return res.json({ url: b64, cloudinary: false })
+      // Native mobile - multipart form
+      dataToUpload = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
+    } else if (req.body?.image) {
+      // Web - base64 string
+      dataToUpload = req.body.image
+    } else {
+      return res.status(400).json({ message: 'No image provided' })
     }
 
-    // Base64 upload (web)
-    const { image } = req.body
-    if (image) {
-      const url = await uploadToCloudinary(image)
-      if (url) return res.json({ url, cloudinary: true })
-      return res.json({ url: image, cloudinary: false })
+    const url = await uploadToCloudinary(dataToUpload)
+
+    if (url) {
+      console.log('Upload success - Cloudinary URL:', url.substring(0, 60))
+      return res.json({ url, cloudinary: true })
     }
 
-    res.status(400).json({ message: 'No image provided' })
+    // Cloudinary failed - return base64 as fallback (works in browser, not on mobile)
+    console.log('Cloudinary unavailable - returning base64 fallback')
+    return res.json({ url: dataToUpload, cloudinary: false })
+
   } catch (err) {
-    console.error('Upload error:', err.message)
-    // Return whatever we have as fallback
+    const msg = err?.message || err?.error?.message || String(err) || 'Unknown upload error'
+    console.error('Upload error:', msg)
     const fallback = req.file
       ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
       : req.body?.image || null
     if (fallback) return res.json({ url: fallback, cloudinary: false })
-    res.status(500).json({ message: err.message })
+    res.status(500).json({ message: msg })
   }
 })
 
