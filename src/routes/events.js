@@ -5,7 +5,7 @@ function isValidUUID(str) {
 const router = require('express').Router()
 const { query } = require('../db')
 const { requireAuth, optionalAuth } = require('../middleware/auth')
-const { notifyOrganizerJoin } = require('./notifications')
+const { notifyOrganizerJoin, notifyOrganizerLeave, notifyAttendeesCancel, notifyAttendeesUpdate, notifyOrganizerComment } = require('./notifications')
 
 // GET /events
 router.get('/', async (req, res) => {

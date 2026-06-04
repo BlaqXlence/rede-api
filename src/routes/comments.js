@@ -1,3 +1,4 @@
+const { notifyOrganizerComment } = require('./notifications')
 // UUID validation helper - prevents crash on local-only event IDs
 function isValidUUID(str) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)

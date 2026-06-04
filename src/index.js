@@ -38,6 +38,7 @@ app.use('/api/v1/events',                eventsRoutes)
 app.use('/api/v1/events/:id/reviews',    reviewsRoutes)
 app.use('/api/v1/events/:id/comments',   commentsRoutes)
 app.use('/api/v1/search',                searchRoutes)
+app.use('/api/v1/notifications', notifRoute)
 app.use('/api/v1/upload',                uploadRoutes)
 app.use('/api/v1/admin',                 adminRoutes)
 
@@ -51,6 +52,23 @@ app.use((err, req, res, next) => {
 })
 
 const PORT = process.env.PORT || 4000
+
+// ── Reminder scheduler ─────────────────────────────────────────
+// Runs every 5 minutes, fires reminders when events are ~1h or ~24h away
+const { sendOneHourReminders, sendDayBeforeReminders } = require('./routes/notifications')
+
+function startReminderScheduler() {
+  setInterval(async () => {
+    try {
+      await sendOneHourReminders()
+      await sendDayBeforeReminders()
+    } catch {}
+  }, 5 * 60 * 1000) // every 5 minutes
+  console.log('⏰ Reminder scheduler started')
+}
+
+startReminderScheduler()
+
 app.listen(PORT, () => {
   console.log(`\n🚀 REDE API on port ${PORT}`)
   console.log(`📦 Env: ${process.env.NODE_ENV}`)
