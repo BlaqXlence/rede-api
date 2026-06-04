@@ -8,6 +8,7 @@ const reviewsRoutes  = require('./routes/reviews')
 const commentsRoutes = require('./routes/comments')
 const searchRoutes   = require('./routes/search')
 const uploadRoutes   = require('./routes/upload')
+const notifRoute     = require('./routes/notifRoute')
 const adminRoutes    = require('./routes/admin')
 
 const app = express()
