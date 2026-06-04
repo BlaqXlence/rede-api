@@ -150,7 +150,7 @@ router.post('/', requireAuth, async (req, res) => {
     `, [title, description, category,
         cover_image || 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=600',
         start_time, end_time, location_name, location_address || location_name,
-        parseFloat(location_lat)||0.3476, parseFloat(location_lng)||32.5825,
+        location_lat ? parseFloat(location_lat) : null, location_lng ? parseFloat(location_lng) : null,
         req.user.id, max_attendees ? parseInt(max_attendees) : null,
         parseInt(entry_fee)||0, original_fee ? parseInt(original_fee) : null, tags||[]])
 
@@ -263,8 +263,8 @@ function fmt(row) {
     startTime: row.start_time, endTime: row.end_time,
     location: {
       name: row.location_name, address: row.location_address,
-      lat: parseFloat(row.location_lat)||0.3476,
-      lng: parseFloat(row.location_lng)||32.5825,
+      lat: row.location_lat ? parseFloat(row.location_lat) : null,
+      lng: row.location_lng ? parseFloat(row.location_lng) : null,
     },
     organizer: {
       id: row.organizer_id, name: row.organizer_name,
